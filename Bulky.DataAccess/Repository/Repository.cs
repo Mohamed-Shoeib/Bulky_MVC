@@ -24,6 +24,7 @@ namespace Bulky.DataAccess.Repository
         {
             dbSet.Add(Entity);
         }
+
         public T Get(Expression<Func<T, bool>> filter, string? includeProperties = null, bool tracked = false)
         {
             IQueryable<T> query;
@@ -49,7 +50,6 @@ namespace Bulky.DataAccess.Repository
             return query.FirstOrDefault();
 
         }
-
 
         public IEnumerable<T> GetAll(Expression<Func<T, bool>>? filter, string? includeProperties = null)
         {

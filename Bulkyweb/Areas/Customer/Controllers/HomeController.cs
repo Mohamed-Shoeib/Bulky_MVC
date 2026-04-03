@@ -21,27 +21,21 @@ namespace Bulkyweb.Areas.Customer.Controllers
         }
         public IActionResult Index()
         {
-            var claimsIdentity = (ClaimsIdentity)User.Identity;
-            var claim = claimsIdentity.FindFirst(ClaimTypes.NameIdentifier);
-
-            if(claim != null)
-            {
-                HttpContext.Session.SetInt32(SD.SessionCart, unitOfWork.ShoppingCart.GetAll(u => u.ApplicationUserId == claim.Value).Count());
-            }
-
-            IEnumerable<Product> ProductList = unitOfWork.Product.GetAll(includeProperties:"Category").ToList();
-            return View(ProductList);
+            IEnumerable<Product> productList = unitOfWork.Product.GetAll(includeProperties: "Category,ProductImages");
+            return View(productList);
         }
+
         public IActionResult Details(int productId)
         {
             ShoppingCart cart = new()
             {
-                Product = unitOfWork.Product.Get(p => p.Id == productId, includeProperties: "Category"),
+                Product = unitOfWork.Product.Get(u => u.Id == productId, includeProperties: "Category,ProductImages"),
                 Count = 1,
                 ProductId = productId
             };
             return View(cart);
         }
+
         [HttpPost]
         public IActionResult Details(ShoppingCart shoppingcart)
         {
