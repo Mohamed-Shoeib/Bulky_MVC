@@ -19,14 +19,11 @@ namespace Bulkyweb.Areas.Admin.Controllers
     [Authorize(Roles = SD.Role_Admin)]
     public class UserController : Controller
     {
-        private readonly ApplicationDbContext db;
-        public readonly IUnitOfWork unitOfWork;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly RoleManager<IdentityRole> _roleManager;
         private readonly IUnitOfWork _unitOfWork;
-        public UserController(UserManager<IdentityUser> userManager, IUnitOfWork unitOfWork, RoleManager<IdentityRole> roleManager,ApplicationDbContext _db)
+        public UserController(UserManager<IdentityUser> userManager, IUnitOfWork unitOfWork, RoleManager<IdentityRole> roleManager)
         {
-            db = _db;
             _unitOfWork = unitOfWork;
             _roleManager = roleManager;
             _userManager = userManager;
@@ -36,15 +33,9 @@ namespace Bulkyweb.Areas.Admin.Controllers
             return View();
         }
 
-        [HttpGet]
         public IActionResult RoleManagment(string userId)
         {
-            //var user = _unitOfWork.ApplicationUser.Get(u => u.Id == userId, includeProperties: "Company");
 
-            //if (user == null)
-            //{
-            //    return NotFound();
-            //}
             RoleMangmentVM RoleVM = new RoleMangmentVM()
             {
                 ApplicationUser = _unitOfWork.ApplicationUser.Get(u => u.Id == userId, includeProperties: "Company"),
@@ -62,7 +53,6 @@ namespace Bulkyweb.Areas.Admin.Controllers
 
             RoleVM.ApplicationUser.Role = _userManager.GetRolesAsync(_unitOfWork.ApplicationUser.Get(u => u.Id == userId))
                     .GetAwaiter().GetResult().FirstOrDefault();
-
             return View(RoleVM);
         }
 
@@ -70,12 +60,14 @@ namespace Bulkyweb.Areas.Admin.Controllers
         public IActionResult RoleManagment(RoleMangmentVM roleManagmentVM)
         {
 
-            string RoleId = db.UserRoles.FirstOrDefault(u => u.UserId == roleManagmentVM.ApplicationUser.Id).RoleId;
-            string oldRole = db.Roles.FirstOrDefault(r => r.Id == RoleId).Name;
+            string oldRole = _userManager.GetRolesAsync(_unitOfWork.ApplicationUser.Get(u => u.Id == roleManagmentVM.ApplicationUser.Id))
+                    .GetAwaiter().GetResult().FirstOrDefault();
+
+            ApplicationUser applicationUser = _unitOfWork.ApplicationUser.Get(u => u.Id == roleManagmentVM.ApplicationUser.Id);
+
 
             if (!(roleManagmentVM.ApplicationUser.Role == oldRole))
             {
-                ApplicationUser applicationUser = db.ApplicationUsers.FirstOrDefault(u => u.Id == roleManagmentVM.ApplicationUser.Id);
                 //a role was updated
                 if (roleManagmentVM.ApplicationUser.Role == SD.Role_Company)
                 {
@@ -85,57 +77,76 @@ namespace Bulkyweb.Areas.Admin.Controllers
                 {
                     applicationUser.CompanyId = null;
                 }
-                db.SaveChanges();
+                _unitOfWork.ApplicationUser.Update(applicationUser);
+                _unitOfWork.Save();
 
                 _userManager.RemoveFromRoleAsync(applicationUser, oldRole).GetAwaiter().GetResult();
                 _userManager.AddToRoleAsync(applicationUser, roleManagmentVM.ApplicationUser.Role).GetAwaiter().GetResult();
 
             }
+            else
+            {
+                if (oldRole == SD.Role_Company && applicationUser.CompanyId != roleManagmentVM.ApplicationUser.CompanyId)
+                {
+                    applicationUser.CompanyId = roleManagmentVM.ApplicationUser.CompanyId;
+                    _unitOfWork.ApplicationUser.Update(applicationUser);
+                    _unitOfWork.Save();
+                }
+            }
+
             return RedirectToAction("Index");
         }
 
-        #region API Call
+
+        #region API CALLS
+
         [HttpGet]
         public IActionResult GetAll()
         {
-            List<ApplicationUser> objUserList = db.ApplicationUsers.Include(u => u.Company).ToList();
-
-            var userRole = db.UserRoles.ToList();
-            var roles = db.Roles.ToList();
+            List<ApplicationUser> objUserList = _unitOfWork.ApplicationUser.GetAll(includeProperties: "Company").ToList();
 
             foreach (var user in objUserList)
             {
-                user.Role = _userManager.GetRolesAsync(user).GetAwaiter().GetResult().FirstOrDefault() ?? "";
+
+                user.Role = _userManager.GetRolesAsync(user).GetAwaiter().GetResult().FirstOrDefault();
 
                 if (user.Company == null)
                 {
-                    user.Company = new Company { Name = "" };
+                    user.Company = new Company()
+                    {
+                        Name = ""
+                    };
                 }
             }
 
             return Json(new { data = objUserList });
         }
 
+
         [HttpPost]
-        public IActionResult LockUnlock([FromBody]string id)
+        public IActionResult LockUnlock([FromBody] string id)
         {
 
-            var objFromDb = db.ApplicationUsers.FirstOrDefault(u => u.Id == id);
-            if (objFromDb == null) 
+            var objFromDb = _unitOfWork.ApplicationUser.Get(u => u.Id == id);
+            if (objFromDb == null)
             {
                 return Json(new { success = false, message = "Error while Locking/Unlocking" });
             }
 
-            if(objFromDb.LockoutEnd!=null && objFromDb.LockoutEnd > DateTime.Now) {
+            if (objFromDb.LockoutEnd != null && objFromDb.LockoutEnd > DateTime.Now)
+            {
                 //user is currently locked and we need to unlock them
                 objFromDb.LockoutEnd = DateTime.Now;
             }
-            else {
+            else
+            {
                 objFromDb.LockoutEnd = DateTime.Now.AddYears(1000);
             }
-            db.SaveChanges();
+            _unitOfWork.ApplicationUser.Update(objFromDb);
+            _unitOfWork.Save();
             return Json(new { success = true, message = "Operation Successful" });
         }
+
         #endregion
     }
 }
